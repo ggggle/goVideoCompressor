@@ -1,7 +1,7 @@
 package main
 
 import (
-    "net";
+    "net"
     "fmt"
     "time"
     "os/exec"

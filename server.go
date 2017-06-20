@@ -20,7 +20,7 @@ var OnConnect chan int
 var ConvertSuccess chan [2]int
 
 func main() {
-    //b,path:=SplitFile("rdt-281.mp4")
+    //b,path:=SplitFile("supa-159.mp4")
     //fmt.Printf("%d", b)
     l, err := net.Listen("tcp", "0.0.0.0:8054")
     defer l.Close()
@@ -29,7 +29,7 @@ func main() {
     }
     //go HeartBeat()
     go ReadStatus()
-    go JobAlloc("rdt-281.mp412", 72, "")
+    go JobAlloc("supa-159.mp412", 20, "-s 1280x720")
     for {
         if c, err := l.Accept(); err == nil {
             go NewConnect(c, ConnectId)
@@ -61,6 +61,8 @@ Loop:
     for {
         select {
         case i := <-ConvertSuccess:
+            AllConnects[i[0]].Close()
+            delete(AllConnects, i[0])
             delete(remainMap, i[1])
             fmt.Printf("piece[%d] convert success\n", i[1])
             /*
