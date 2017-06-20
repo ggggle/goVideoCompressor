@@ -11,6 +11,8 @@ import (
     "regexp"
     "strconv"
     "path/filepath"
+    "flag"
+    "sync"
 )
 
 var ConnectId int
@@ -18,25 +20,92 @@ var AllConnects = make(map[int]net.Conn)
 var TickTime int = 10
 var OnConnect chan int
 var ConvertSuccess chan [2]int
+var mapLock *sync.Mutex
 
 func main() {
+    mapLock = new(sync.Mutex)
+    mod := flag.String("mod", "", "split|convert|count")
+    filePath := flag.String("i", "", "file path")
+    Args := flag.String("args", "", "ffmpeg args|segment_time|count_time")
+    piece := flag.Int("p", 0, "piece number")
+    flag.Parse()
+    switch *mod {
+    case "split":
+        fmt.Printf("split video....wait\n")
+        b, path := SplitFile(*filePath, *Args)
+        fmt.Printf("[%s] [%d]\n", path, b-1)
+        return
+    case "convert":
+        if *piece < 0 {
+            fmt.Printf("convert piece error[%d]", *piece)
+            return
+        }
+        l, err := net.Listen("tcp", "0.0.0.0:8054")
+        defer l.Close()
+        if err != nil {
+            fmt.Printf("Failure to listen: %s\n", err.Error())
+            return
+        }
+        ftpDir := "/home/video" + *filePath
+        os.Mkdir(ftpDir, 0777)
+        go ReadStatus()
+        go JobAlloc(*filePath, *piece, *Args)
+        for {
+            if c, err := l.Accept(); err == nil {
+                go NewConnect(c, ConnectId)
+                ConnectId++
+            }
+        }
+    case "count":
+        l, err := net.Listen("tcp", "0.0.0.0:8054")
+        defer l.Close()
+        if err != nil {
+            fmt.Printf("Failure to listen: %s\n", err.Error())
+            return
+        }
+        waitTime, _ := strconv.Atoi(*Args)
+        timeOut := make(chan bool, 1)
+        go func(second int) {
+            for ; second > 0; second-- {
+                time.Sleep(time.Second)
+                fmt.Printf("time[%d]\n", second)
+                timeOut <- false
+            }
+            timeOut <- true
+        }(waitTime)
+    countLoop:
+        for {
+            go func() {
+                if c, err := l.Accept(); err == nil {
+                    mapLock.Lock()
+                    AllConnects[ConnectId] = c
+                    ConnectId++
+                    mapLock.Unlock()
+                }
+            }()
+            select {
+            case ok := <-timeOut:
+                if ok {
+                    break countLoop
+                }
+            }
+        }
+        fmt.Printf("online client[%d]\n", ConnectId)
+        for _, value := range AllConnects {
+            value.Close()
+        }
+        return
+    default:
+        fmt.Printf("mod error[%s]\n", *mod)
+        return
+    }
     //b,path:=SplitFile("supa-159.mp4")
     //fmt.Printf("%d", b)
-    l, err := net.Listen("tcp", "0.0.0.0:8054")
-    defer l.Close()
-    if err != nil {
-        fmt.Printf("Failure to listen: %s\n", err.Error())
-    }
-    //go HeartBeat()
-    go ReadStatus()
-    go JobAlloc("supa-159.mp412", 20, "-s 1280x720")
-    for {
-        if c, err := l.Accept(); err == nil {
-            go NewConnect(c, ConnectId)
-            ConnectId++
-        }
-    }
-    fmt.Printf("%d\n", fileCount("./"))
+
+}
+
+func countClient(c net.Conn, id int) {
+    AllConnects[id] = c
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
@@ -85,7 +154,7 @@ Loop:
                 fmt.Printf("!!!send error[%s]\n", err.Error())
             } else {
                 num--
-                fmt.Printf("OnConnect send success[%d] [%s]\n", i, path+";"+numStr)
+                fmt.Printf("[%s]OnConnect send success[%d] [%s]\n", time.Now().Format("2006-01-02 15:04:05"), i, path+";"+numStr)
             }
             if num < 0 {
                 break Loop
@@ -96,6 +165,7 @@ Loop:
 
 func ReadStatus() {
     for {
+        mapLock.Lock()
         for key, c := range AllConnects {
             data := make([]byte, 100)
             n, err := c.Read(data)
@@ -114,15 +184,15 @@ func ReadStatus() {
                 }
             }
         }
+        mapLock.Unlock()
         time.Sleep(time.Second * 10)
     }
 }
 
 //分割文件
-func SplitFile(filePath string) (piece int, dir string) {
+func SplitFile(filePath string, segment_time string) (piece int, dir string) {
     //替换\为. 创建目录，分割出来的片段存到目录下
     dir = strings.Replace(filePath, "\\", ".", -1)
-    print(dir)
     dir += "12"
     os.Mkdir(dir, 0755)
     /*timeSum := GetSumTime(filePath)
@@ -137,8 +207,8 @@ func SplitFile(filePath string) (piece int, dir string) {
         cmd.Run()
         //fmt.Printf("%s\n", string(w.Bytes()))
     }*/
-    cmd := exec.Command("ffmpeg", "-i", filePath, "-acodec", "copy", "-f", "segment", "-vcodec",
-        "copy", "-reset_timestamps", "1", "-map", "0", dir+"/"+"%d.mp4")
+    cmd := exec.Command("ffmpeg", "-i", filePath, "-acodec", "copy", "-f", "segment", "-segment_time",
+        segment_time, "-vcodec", "copy", "-reset_timestamps", "1", "-map", "0", dir+"/"+"%d.mp4")
     cmd.Run()
     piece = fileCount(dir)
     return
@@ -152,7 +222,7 @@ func fileCount(path string) (fileNum int) {
         if info.IsDir() {
             return nil
         }
-        fmt.Println(path)
+        //fmt.Println(path)
         fileNum++
         return nil
     })
@@ -207,7 +277,9 @@ func GetSumTime(filePath string) (SumTime int) {
 
 func NewConnect(c net.Conn, i int) {
     fmt.Printf("new connect\n")
+    mapLock.Lock()
     AllConnects[i] = c
+    mapLock.Unlock()
     OnConnect <- i
 }
 
