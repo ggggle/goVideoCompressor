@@ -69,26 +69,20 @@ func main() {
             for ; second > 0; second-- {
                 time.Sleep(time.Second)
                 fmt.Printf("time[%d]\n", second)
-                timeOut <- false
             }
             timeOut <- true
         }(waitTime)
-    countLoop:
-        for {
-            go func() {
+        go func() {
+            for {
                 if c, err := l.Accept(); err == nil {
-                    mapLock.Lock()
                     AllConnects[ConnectId] = c
                     ConnectId++
-                    mapLock.Unlock()
-                }
-            }()
-            select {
-            case ok := <-timeOut:
-                if ok {
-                    break countLoop
                 }
             }
+        }()
+        select {
+        case <-timeOut:
+            fmt.Printf("timeout\n")
         }
         fmt.Printf("online client[%d]\n", ConnectId)
         for _, value := range AllConnects {
