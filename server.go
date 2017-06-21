@@ -14,6 +14,10 @@ import (
     "flag"
     "sync"
 )
+/*TODO  输入参数增加切片大小选项
+        某个切片转码超时重新分配
+        针对某个区间转码
+*/
 
 var ConnectId int
 var AllConnects = make(map[int]net.Conn)
