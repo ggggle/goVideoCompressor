@@ -47,12 +47,17 @@ func main() {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
         }
-        ftpDir := "/home/video/" + *filePath
+        fp := *filePath
+        if (fp[len(fp)-1:]) == "/"{
+            fp = fp[:len(fp)-1]
+        }
+        print(fp+"\n")
+        ftpDir := "/home/video/" + fp
         os.Mkdir(ftpDir, 0755)
         os.Chown(ftpDir, 2000, 2000)
         makeFileList(*piece, ftpDir)
         //go ReadStatus()
-        go JobAlloc(*filePath, *piece, *Args)
+        go JobAlloc(fp, *piece, *Args)
         for {
             if c, err := l.Accept(); err == nil {
                 go NewConnect(c)
