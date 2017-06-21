@@ -18,9 +18,10 @@ import (
 var ConnectId int
 var AllConnects = make(map[int]net.Conn)
 var TickTime int = 10
-var OnConnect chan int
+var OnConnect chan net.Conn
 var ConvertSuccess chan [2]int
 var mapLock *sync.Mutex
+var remainMap = make(map[int]string)
 
 func main() {
     mapLock = new(sync.Mutex)
@@ -47,13 +48,14 @@ func main() {
             return
         }
         ftpDir := "/home/video/" + *filePath
-        os.Mkdir(ftpDir, 0777)
-        go ReadStatus()
+        os.Mkdir(ftpDir, 0755)
+        os.Chown(ftpDir, 2000, 2000)
+        makeFileList(*piece, ftpDir)
+        //go ReadStatus()
         go JobAlloc(*filePath, *piece, *Args)
         for {
             if c, err := l.Accept(); err == nil {
-                go NewConnect(c, ConnectId)
-                ConnectId++
+                go NewConnect(c)
             }
         }
     case "count":
@@ -64,7 +66,7 @@ func main() {
         }
         defer l.Close()
         waitTime, err := strconv.Atoi(*Args)
-        if err!=nil{
+        if err != nil {
             fmt.Printf("args error[%s]", *Args)
             return
         }
@@ -104,10 +106,10 @@ func main() {
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
-    remainMap := make(map[int]string)
     for i := 0; i < num; i++ {
         remainMap[i] = strconv.Itoa(i)
     }
+    /*
     for _, c := range AllConnects {
         fmt.Printf("job[%d]to[%s]", num, c.RemoteAddr().String())
         numStr := strconv.Itoa(num)
@@ -119,37 +121,20 @@ func JobAlloc(path string, num int, convertArgs string) {
             fmt.Printf("first alloc[%s]\n", path+";"+numStr)
         }
     }
-    ConvertSuccess = make(chan [2]int, 10)
-    OnConnect = make(chan int, 10)
+    */
+    ConvertSuccess = make(chan [2]int, 50)
+    OnConnect = make(chan net.Conn, 50)
 Loop:
     for {
         select {
-        case i := <-ConvertSuccess:
-            AllConnects[i[0]].Close()
-            delete(AllConnects, i[0])
-            delete(remainMap, i[1])
-            fmt.Printf("piece[%d] convert success\n", i[1])
-            /*
-            numStr := strconv.Itoa(num)
-            _, err := AllConnects[i[0]].Write([]byte(path + ";" + numStr + ";" + convertArgs))
-            if err != nil {
-                fmt.Printf("!!!send error[%s]\n", err.Error())
-            } else {
-                num--
-                fmt.Printf("ConvertSuccess send success[%d] [%s]\n", i, path+";"+numStr)
-            }
-            if num < 0 {
-                break Loop
-            }
-            */
         case i := <-OnConnect:
             numStr := strconv.Itoa(num)
-            _, err := AllConnects[i].Write([]byte(path + ";" + numStr + ";" + convertArgs))
+            _, err := i.Write([]byte(path + ";" + numStr + ";" + convertArgs))
             if err != nil {
                 fmt.Printf("!!!send error[%s]\n", err.Error())
             } else {
                 num--
-                fmt.Printf("[%s]OnConnect send success[%d] [%s]\n", time.Now().Format("2006-01-02 15:04:05"), i, path+";"+numStr)
+                fmt.Printf("[%s]OnConnect send success [%s]\n", time.Now().Format("2006-01-02 15:04:05"), path+";"+numStr)
             }
             if num < 0 {
                 break Loop
@@ -173,7 +158,9 @@ func ReadStatus() {
                     pieceNum := strings.Split(Data, ";")[1]
                     arr[1], _ = strconv.Atoi(pieceNum)
                     fmt.Printf("[%d] convert success\n", key)
-                    ConvertSuccess <- arr
+                    c.Close()
+                    delete(AllConnects, key)
+                    //ConvertSuccess <- arr
                 default:
                     fmt.Printf("heart[%d]\n", key)
                 }
@@ -270,12 +257,30 @@ func GetSumTime(filePath string) (SumTime int) {
     return
 }
 
-func NewConnect(c net.Conn, i int) {
+func NewConnect(c net.Conn) {
     fmt.Printf("new connect\n")
-    mapLock.Lock()
-    AllConnects[i] = c
-    mapLock.Unlock()
-    OnConnect <- i
+    go func() {
+        for {
+            data := make([]byte, 100)
+            n, err := c.Read(data)
+            if err == nil {
+                Data := string(data[:n])
+                switch {
+                case Data[0:7] == "success":
+                    pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
+                    fmt.Printf("##[%d]piece convert success\n", pieceNum)
+                    c.Close()
+                    delete(remainMap, pieceNum)
+                    fmt.Printf("[%d]remain job %v\n", len(remainMap), remainMap)
+                    return
+                    //ConvertSuccess <- arr
+                default:
+                    continue
+                }
+            }
+        }
+    }()
+    OnConnect <- c
 }
 
 func HeartBeat() {
@@ -291,4 +296,24 @@ func HeartBeat() {
         time.Sleep(time.Second * 3)
     }
 
+}
+
+func makeFileList(fileCount int, dirPath string)  {
+    var filePath string
+    fileName := "filelist.txt"
+    if dirPath[len(dirPath)-1:] == "/"{
+        filePath = dirPath + fileName
+    }else {
+        filePath = dirPath + "/" + fileName
+    }
+    file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
+    if err!=nil{
+        fmt.Printf("makeFileList error[%v]\n", err)
+        return
+    }
+    for i:=0; i<=fileCount; i++ {
+        content := fmt.Sprintf("file '%d.mp4'\n", i)
+        file.WriteString(content)
+    }
+    file.Close()
 }
