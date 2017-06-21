@@ -58,12 +58,16 @@ func main() {
         }
     case "count":
         l, err := net.Listen("tcp", "0.0.0.0:8054")
-        defer l.Close()
         if err != nil {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
         }
-        waitTime, _ := strconv.Atoi(*Args)
+        defer l.Close()
+        waitTime, err := strconv.Atoi(*Args)
+        if err!=nil{
+            fmt.Printf("args error[%s]", *Args)
+            return
+        }
         timeOut := make(chan bool, 1)
         go func(second int) {
             for ; second > 0; second-- {
@@ -84,8 +88,9 @@ func main() {
         case <-timeOut:
             fmt.Printf("timeout\n")
         }
-        fmt.Printf("online client[%d]\n", ConnectId)
-        for _, value := range AllConnects {
+        fmt.Printf("####Online Client[%d]####\n", ConnectId)
+        for key, value := range AllConnects {
+            fmt.Printf("[%d]Client IP:port[%s]\n", key, value.RemoteAddr().String())
             value.Close()
         }
         return
@@ -96,10 +101,6 @@ func main() {
     //b,path:=SplitFile("supa-159.mp4")
     //fmt.Printf("%d", b)
 
-}
-
-func countClient(c net.Conn, id int) {
-    AllConnects[id] = c
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
