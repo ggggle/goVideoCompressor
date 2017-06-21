@@ -46,7 +46,7 @@ func main() {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
         }
-        ftpDir := "/home/video" + *filePath
+        ftpDir := "/home/video/" + *filePath
         os.Mkdir(ftpDir, 0777)
         go ReadStatus()
         go JobAlloc(*filePath, *piece, *Args)
