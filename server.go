@@ -12,7 +12,6 @@ import (
     "strconv"
     "path/filepath"
     "flag"
-    "sync"
 )
 
 /*TODO  输入参数增加切片大小选项
@@ -22,14 +21,10 @@ import (
 
 var ConnectId int
 var AllConnects = make(map[int]net.Conn)
-var TickTime int = 10
 var OnConnect chan net.Conn
-var ConvertSuccess chan [2]int
-var mapLock *sync.Mutex
 var remainMap = make(map[int]string)
 
 func main() {
-    mapLock = new(sync.Mutex)
     mod := flag.String("mod", "", "s-split|c-convert|t-touch")
     filePath := flag.String("i", "", "file path")
     Args := flag.String("args", "", "ffmpeg args|segment_time|count_time")
@@ -37,11 +32,19 @@ func main() {
     flag.Parse()
     switch *mod {
     case "s":
+        if len(*filePath) <= 0 {
+            fmt.Printf("no input file\n")
+            return
+        }
         fmt.Printf("split video....wait\n")
         b, path := SplitFile(*filePath, *Args)
         fmt.Printf("[%s] [%d]\n", path, b)
         return
     case "c":
+        if len(*filePath) <= 0 {
+            fmt.Printf("no input file\n")
+            return
+        }
         if *piece < 0 {
             fmt.Printf("convert piece error[%d]", *piece)
             return
@@ -111,9 +114,9 @@ func main() {
             fmt.Printf("timeout\n")
         }
         fmt.Printf("####Online Client[%d]####\n", ConnectId)
-        for key, value := range AllConnects {
-            fmt.Printf("[%d]Client IP:port[%s]\n", key, value.RemoteAddr().String())
-            value.Close()
+        for key := 0; key < len(AllConnects); key++ {
+            fmt.Printf("[%d]Client IP:port[%s]\n", key, AllConnects[key].RemoteAddr().String())
+            AllConnects[key].Close()
         }
         return
     default:
@@ -142,7 +145,6 @@ func JobAlloc(path string, num int, convertArgs string) {
         }
     }
     */
-    ConvertSuccess = make(chan [2]int, 50)
     OnConnect = make(chan net.Conn, 50)
 Loop:
     for {
@@ -160,34 +162,6 @@ Loop:
                 break Loop
             }
         }
-    }
-}
-
-func ReadStatus() {
-    for {
-        mapLock.Lock()
-        for key, c := range AllConnects {
-            data := make([]byte, 100)
-            n, err := c.Read(data)
-            if err == nil {
-                Data := string(data[:n])
-                switch {
-                case Data[0:7] == "success":
-                    var arr [2]int
-                    arr[0] = key
-                    pieceNum := strings.Split(Data, ";")[1]
-                    arr[1], _ = strconv.Atoi(pieceNum)
-                    fmt.Printf("[%d] convert success\n", key)
-                    c.Close()
-                    delete(AllConnects, key)
-                    //ConvertSuccess <- arr
-                default:
-                    fmt.Printf("heart[%d]\n", key)
-                }
-            }
-        }
-        mapLock.Unlock()
-        time.Sleep(time.Second * 10)
     }
 }
 
