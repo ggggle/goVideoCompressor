@@ -14,6 +14,7 @@ import (
     "flag"
     "sync"
 )
+
 /*TODO  输入参数增加切片大小选项
         某个切片转码超时重新分配
         针对某个区间转码
@@ -29,21 +30,24 @@ var remainMap = make(map[int]string)
 
 func main() {
     mapLock = new(sync.Mutex)
-    mod := flag.String("mod", "", "split|convert|count")
+    mod := flag.String("mod", "", "s-split|c-convert|t-touch")
     filePath := flag.String("i", "", "file path")
     Args := flag.String("args", "", "ffmpeg args|segment_time|count_time")
     piece := flag.Int("p", 0, "piece number")
     flag.Parse()
     switch *mod {
-    case "split":
+    case "s":
         fmt.Printf("split video....wait\n")
         b, path := SplitFile(*filePath, *Args)
-        fmt.Printf("[%s] [%d]\n", path, b-1)
+        fmt.Printf("[%s] [%d]\n", path, b)
         return
-    case "convert":
+    case "c":
         if *piece < 0 {
             fmt.Printf("convert piece error[%d]", *piece)
             return
+        }
+        if 0 == *piece {
+            *piece = fileCount(*filePath)
         }
         l, err := net.Listen("tcp", "0.0.0.0:8054")
         defer l.Close()
@@ -51,15 +55,17 @@ func main() {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
         }
+        //去除路径中的最后一个斜杠
         fp := *filePath
-        if (fp[len(fp)-1:]) == "/"{
+        if (fp[len(fp)-1:]) == "/" {
             fp = fp[:len(fp)-1]
         }
-        print(fp+"\n")
+        //print(fp + "\n")
         ftpDir := "/home/video/" + fp
         os.Mkdir(ftpDir, 0755)
         os.Chown(ftpDir, 2000, 2000)
         makeFileList(*piece, ftpDir)
+        makeConcatScript(ftpDir)
         //go ReadStatus()
         go JobAlloc(fp, *piece, *Args)
         for {
@@ -67,17 +73,22 @@ func main() {
                 go NewConnect(c)
             }
         }
-    case "count":
+    case "t":
         l, err := net.Listen("tcp", "0.0.0.0:8054")
         if err != nil {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
         }
         defer l.Close()
-        waitTime, err := strconv.Atoi(*Args)
-        if err != nil {
-            fmt.Printf("args error[%s]", *Args)
-            return
+        var waitTime int
+        if len(*Args) > 0 {
+            waitTime, err = strconv.Atoi(*Args)
+            if err != nil {
+                fmt.Printf("args error[%s]", *Args)
+                return
+            }
+        } else {
+            waitTime = 11
         }
         timeOut := make(chan bool, 1)
         go func(second int) {
@@ -184,7 +195,7 @@ func ReadStatus() {
 func SplitFile(filePath string, segment_time string) (piece int, dir string) {
     //替换\为. 创建目录，分割出来的片段存到目录下
     dir = strings.Replace(filePath, "\\", ".", -1)
-    dir += "12"
+    dir = "12" + dir
     os.Mkdir(dir, 0755)
     /*timeSum := GetSumTime(filePath)
     //w := bytes.NewBuffer(nil)
@@ -219,6 +230,8 @@ func fileCount(path string) (fileNum int) {
     })
     if err != nil {
         fmt.Printf("error [%v]\n", err)
+    } else {
+        fileNum --
     }
     return
 }
@@ -307,22 +320,33 @@ func HeartBeat() {
 
 }
 
-func makeFileList(fileCount int, dirPath string)  {
+func makeFileList(fileCount int, dirPath string) {
     var filePath string
     fileName := "filelist.txt"
-    if dirPath[len(dirPath)-1:] == "/"{
+    if dirPath[len(dirPath)-1:] == "/" {
         filePath = dirPath + fileName
-    }else {
+    } else {
         filePath = dirPath + "/" + fileName
     }
     file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
-    if err!=nil{
+    if err != nil {
         fmt.Printf("makeFileList error[%v]\n", err)
         return
     }
-    for i:=0; i<=fileCount; i++ {
+    for i := 0; i <= fileCount; i++ {
         content := fmt.Sprintf("file '%d.mp4'\n", i)
         file.WriteString(content)
     }
     file.Close()
+}
+
+func makeConcatScript(dirPath string) {
+    file := dirPath + "/" + "concat.sh"
+    f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0755)
+    if err != nil {
+        fmt.Printf("makeConcatScript error[%v]\n", err)
+    } else {
+        f.WriteString("#!/bin/sh\nffmpeg -f concat -i filelist.txt -c copy output.mp4")
+        f.Close()
+    }
 }
