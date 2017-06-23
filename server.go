@@ -23,13 +23,15 @@ var ConnectId int
 var AllConnects = make(map[int]net.Conn)
 var OnConnect chan net.Conn
 var remainMap = make(map[int]string)
+//用来查找remainMap里的key
+var initMap = make(map[int]int)
 
 func main() {
     mod := flag.String("mod", "", "s-split|c-convert|t-touch")
-    filePath := flag.String("i", "", "file path")
+    filePath := flag.String("i", "", "文件路径")
     Args := flag.String("args", "", "ffmpeg args|piece_size|count_time")
-    piece := flag.Int("p", 0, "piece number")
-    port := flag.String("port", "8054", "listen port")
+    piece := flag.String("p", "", "只转换一部分片段，用分号;隔开")
+    port := flag.String("port", "8054", "监听端口")
     flag.Parse()
     switch *mod {
     case "s":
@@ -65,12 +67,20 @@ func main() {
             fmt.Printf("no input file\n")
             return
         }
-        if *piece < 0 {
-            fmt.Printf("convert piece error[%d]", *piece)
-            return
-        }
-        if 0 == *piece {
-            *piece = fileCount(*filePath)
+        pieceNum := fileCount(*filePath)
+        if len(*piece) > 0 {
+            pNum := strings.Split(*piece, ";")
+            for _, value := range pNum {
+                v, err := strconv.Atoi(value)
+                if err != nil || v > pieceNum {
+                    fmt.Printf("输入参数错误[%s]\n", *piece)
+                    return
+                } else {
+                    //两个映射关系
+                    remainMap[v] = value
+                    initMap[len(initMap)] = v
+                }
+            }
         }
         //现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
         if len(*Args) > 0 {
@@ -88,13 +98,17 @@ func main() {
             fp = fp[:len(fp)-1]
         }
         //print(fp + "\n")
-        ftpDir := "/home/video/" + fp
-        os.Mkdir(ftpDir, 0755)
-        os.Chown(ftpDir, 2000, 2000)
-        makeFileList(*piece, ftpDir)
-        makeConcatScript(ftpDir)
+        if len(remainMap) > 0 {
+            pieceNum = len(remainMap) - 1
+        } else {
+            ftpDir := "/home/video/" + fp
+            os.Mkdir(ftpDir, 0755)
+            os.Chown(ftpDir, 2000, 2000)
+            makeFileList(pieceNum, ftpDir)
+            makeConcatScript(ftpDir)
+        }
         //go ReadStatus()
-        go JobAlloc(fp, *piece, *Args)
+        go JobAlloc(fp, pieceNum, *Args)
         for {
             if c, err := l.Accept(); err == nil {
                 go NewConnect(c)
@@ -150,21 +164,25 @@ func main() {
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
-    for i := 0; i < num; i++ {
-        remainMap[i] = strconv.Itoa(i)
+    //fmt.Printf("%v\n", remainMap)
+    //remainMap在外构造，只转换部分片段
+    if len(remainMap) == 0 {
+        for i := 0; i < num; i++ {
+            remainMap[i] = strconv.Itoa(i)
+            initMap[i] = i
+        }
     }
     OnConnect = make(chan net.Conn, 50)
 Loop:
     for {
         select {
         case i := <-OnConnect:
-            numStr := strconv.Itoa(num)
-            _, err := i.Write([]byte(path + ";" + numStr + ";" + convertArgs))
+            _, err := i.Write([]byte(path + ";" + remainMap[initMap[num]] + ";" + convertArgs))
             if err != nil {
                 fmt.Printf("!!!send error[%s]\n", err.Error())
             } else {
+                fmt.Printf("[%s]OnConnect send success[%s]\n", time.Now().Format("2006-01-02 15:04:05"), path+";"+remainMap[initMap[num]])
                 num--
-                fmt.Printf("[%s]OnConnect send success [%s]\n", time.Now().Format("2006-01-02 15:04:05"), path+";"+numStr)
             }
             if num < 0 {
                 break Loop
