@@ -32,12 +32,31 @@ func main() {
     flag.Parse()
     switch *mod {
     case "s":
+        pieceSize := 100
         if len(*filePath) <= 0 {
             fmt.Printf("no input file\n")
             return
         }
+        fileInfo, err:= os.Stat(*filePath)
+        if err!=nil{
+            fmt.Printf("[%s]not a file\n", *filePath)
+            return
+        }
+        fileSize := fileInfo.Size()
+        //单位转换成MB
+        fileSize /= 1024*1024
+        secondTime := GetSumTime(*filePath)
+        tmp, err := strconv.Atoi(*Args)
+        if err==nil{
+            pieceSize = tmp
+        }else {
+            fmt.Printf("split input args[%s] error, ignore\n", *Args)
+        }
+        segmentTime := pieceSize * secondTime / int(fileSize)
+        fmt.Printf("segment[%d]\n", segmentTime)
+        segmentArgs := strconv.Itoa(segmentTime)
         fmt.Printf("split video....wait\n")
-        b, path := SplitFile(*filePath, *Args)
+        b, path := SplitFile(*filePath, segmentArgs)
         fmt.Printf("[%s] [%d]\n", path, b)
         return
     case "c":
@@ -224,7 +243,7 @@ func FormatTime(minute int) (formatString string) {
     return
 }
 
-//返回视频分钟数
+//返回视频秒数
 func GetSumTime(filePath string) (SumTime int) {
     cmd := exec.Command("ffmpeg", "-i", filePath)
     w := bytes.NewBuffer(nil)
@@ -234,21 +253,20 @@ func GetSumTime(filePath string) (SumTime int) {
     //匹配出时间长度
     reg := regexp.MustCompile("Duration:(\\s+)(\\d+):(\\d+):(\\d+)")
     timeStr := []rune(reg.FindString(string(w.Bytes())))[len("Duration: "):]
-    //计算分钟数
+    //计算秒数
     for key, value := range strings.Split(string(timeStr), ":") {
         i, _ := strconv.Atoi(value)
         switch key {
         case 0:
-            SumTime += i * 60
+            SumTime += i * 3600
         case 1:
-            SumTime += i
+            SumTime += i * 60
         case 2:
-            if i > 0 {
-                SumTime ++
-            }
+            SumTime += i
         }
-        fmt.Printf("%s\n", value)
+        //fmt.Printf("%s\n", value)
     }
+    SumTime ++
     fmt.Printf("%d\n", SumTime)
     return
 }
