@@ -27,8 +27,9 @@ var remainMap = make(map[int]string)
 func main() {
     mod := flag.String("mod", "", "s-split|c-convert|t-touch")
     filePath := flag.String("i", "", "file path")
-    Args := flag.String("args", "", "ffmpeg args|segment_time|count_time")
+    Args := flag.String("args", "", "ffmpeg args|piece_size|count_time")
     piece := flag.Int("p", 0, "piece number")
+    port := flag.String("port", "8054", "listen port")
     flag.Parse()
     switch *mod {
     case "s":
@@ -37,19 +38,19 @@ func main() {
             fmt.Printf("no input file\n")
             return
         }
-        fileInfo, err:= os.Stat(*filePath)
-        if err!=nil{
+        fileInfo, err := os.Stat(*filePath)
+        if err != nil {
             fmt.Printf("[%s]not a file\n", *filePath)
             return
         }
         fileSize := fileInfo.Size()
         //单位转换成MB
-        fileSize /= 1024*1024
+        fileSize /= 1024 * 1024
         secondTime := GetSumTime(*filePath)
         tmp, err := strconv.Atoi(*Args)
-        if err==nil{
+        if err == nil {
             pieceSize = tmp
-        }else {
+        } else {
             fmt.Printf("split input args[%s] error, ignore\n", *Args)
         }
         segmentTime := pieceSize * secondTime / int(fileSize)
@@ -71,7 +72,11 @@ func main() {
         if 0 == *piece {
             *piece = fileCount(*filePath)
         }
-        l, err := net.Listen("tcp", "0.0.0.0:8054")
+        //现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
+        if len(*Args) > 0 {
+            *Args = "-s 1280x720"
+        }
+        l, err := net.Listen("tcp", "0.0.0.0:" + *port)
         defer l.Close()
         if err != nil {
             fmt.Printf("Failure to listen: %s\n", err.Error())
@@ -96,7 +101,7 @@ func main() {
             }
         }
     case "t":
-        l, err := net.Listen("tcp", "0.0.0.0:8054")
+        l, err := net.Listen("tcp", "0.0.0.0:" + *port)
         if err != nil {
             fmt.Printf("Failure to listen: %s\n", err.Error())
             return
@@ -142,28 +147,12 @@ func main() {
         fmt.Printf("mod error[%s]\n", *mod)
         return
     }
-    //b,path:=SplitFile("supa-159.mp4")
-    //fmt.Printf("%d", b)
-
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
     for i := 0; i < num; i++ {
         remainMap[i] = strconv.Itoa(i)
     }
-    /*
-    for _, c := range AllConnects {
-        fmt.Printf("job[%d]to[%s]", num, c.RemoteAddr().String())
-        numStr := strconv.Itoa(num)
-        _, err := c.Write([]byte(path + ";" + numStr + ";" + convertArgs))
-        if err != nil {
-            fmt.Printf("send error[%s]", err.Error())
-        } else {
-            num--
-            fmt.Printf("first alloc[%s]\n", path+";"+numStr)
-        }
-    }
-    */
     OnConnect = make(chan net.Conn, 50)
 Loop:
     for {
@@ -320,25 +309,33 @@ func makeFileList(fileCount int, dirPath string) {
     } else {
         filePath = dirPath + "/" + fileName
     }
-    file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
-    if err != nil {
-        fmt.Printf("makeFileList error[%v]\n", err)
-        return
+    _, err := os.Stat(filePath)
+    //文件不存在
+    if err != nil && os.IsNotExist(err) {
+        file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE, 0644)
+        if err != nil {
+            fmt.Printf("makeFileList error[%v]\n", err)
+            return
+        }
+        for i := 0; i <= fileCount; i++ {
+            content := fmt.Sprintf("file '%d.mp4'\n", i)
+            file.WriteString(content)
+        }
+        file.Close()
     }
-    for i := 0; i <= fileCount; i++ {
-        content := fmt.Sprintf("file '%d.mp4'\n", i)
-        file.WriteString(content)
-    }
-    file.Close()
+
 }
 
 func makeConcatScript(dirPath string) {
     file := dirPath + "/" + "concat.sh"
-    f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0755)
-    if err != nil {
-        fmt.Printf("makeConcatScript error[%v]\n", err)
-    } else {
-        f.WriteString("#!/bin/sh\nffmpeg -f concat -i filelist.txt -c copy output.mp4")
-        f.Close()
+    _, err := os.Stat(file)
+    if err != nil && os.IsNotExist(err) {
+        f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0755)
+        if err != nil {
+            fmt.Printf("makeConcatScript error[%v]\n", err)
+        } else {
+            f.WriteString("#!/bin/sh\nffmpeg -f concat -i filelist.txt -c copy output.mp4")
+            f.Close()
+        }
     }
 }
