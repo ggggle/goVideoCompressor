@@ -67,12 +67,13 @@ func main() {
             fmt.Printf("no input file\n")
             return
         }
+
         pieceNum := fileCount(*filePath)
         if len(*piece) > 0 {
             pNum := strings.Split(*piece, ";")
             for _, value := range pNum {
                 v, err := strconv.Atoi(value)
-                if err != nil || v > pieceNum {
+                if err != nil || v >= pieceNum {
                     fmt.Printf("输入参数错误[%s]\n", *piece)
                     return
                 } else {
@@ -98,16 +99,19 @@ func main() {
             fp = fp[:len(fp)-1]
         }
         //print(fp + "\n")
+        ftpDir := "/home/video/" + fp
+        os.Mkdir(ftpDir, 0755)
+        os.Chown(ftpDir, 2000, 2000)
+        //只转换部分片段时
         if len(remainMap) > 0 {
-            pieceNum = len(remainMap) - 1
+            pieceNum = len(remainMap)
+            fmt.Printf("pieceNum[%d]\n", pieceNum)
         } else {
-            ftpDir := "/home/video/" + fp
-            os.Mkdir(ftpDir, 0755)
-            os.Chown(ftpDir, 2000, 2000)
             makeFileList(pieceNum, ftpDir)
             makeConcatScript(ftpDir)
         }
         //go ReadStatus()
+        fmt.Printf("pieceNum[%d]\n", pieceNum)
         go JobAlloc(fp, pieceNum, *Args)
         for {
             if c, err := l.Accept(); err == nil {
@@ -172,6 +176,10 @@ func JobAlloc(path string, num int, convertArgs string) {
             initMap[i] = i
         }
     }
+    num--
+    fmt.Printf("num [%d]\n", num)
+    fmt.Printf("remainMap %v\n", remainMap)
+    fmt.Printf("initMap %v\n", initMap)
     OnConnect = make(chan net.Conn, 50)
 Loop:
     for {
@@ -216,6 +224,7 @@ func SplitFile(filePath string, segment_time string) (piece int, dir string) {
     return
 }
 
+//返回文件数量，即最大序号+1
 func fileCount(path string) (fileNum int) {
     err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
         if info == nil {
@@ -230,8 +239,6 @@ func fileCount(path string) (fileNum int) {
     })
     if err != nil {
         fmt.Printf("error [%v]\n", err)
-    } else {
-        fileNum --
     }
     return
 }
@@ -287,6 +294,11 @@ func NewConnect(c net.Conn) {
             if err == nil {
                 Data := string(data[:n])
                 switch {
+                case Data[0:4] == "fail":
+                    pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
+                    fmt.Printf("@@[%d]piece convert fail\n", pieceNum)
+                    c.Close()
+                    return
                 case Data[0:7] == "success":
                     pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
                     fmt.Printf("##[%d]piece convert success\n", pieceNum)
@@ -335,7 +347,7 @@ func makeFileList(fileCount int, dirPath string) {
             fmt.Printf("makeFileList error[%v]\n", err)
             return
         }
-        for i := 0; i <= fileCount; i++ {
+        for i := 0; i < fileCount; i++ {
             content := fmt.Sprintf("file '%d.mp4'\n", i)
             file.WriteString(content)
         }

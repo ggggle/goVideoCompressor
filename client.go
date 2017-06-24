@@ -38,18 +38,15 @@ func main() {
                     go downloadFileAndConvert(path, recieveSplit[2])
                 }
             }
-        Loop:
-            for {
-                select {
-                case status := <-converSuccess:
-                    if len(status) > 0 {
-                        MyPrintf("tell server[%s]\n", status)
-                        _, err := connect.Write([]byte("success;" + status))
-                        if err == nil {
-                            MyPrintf("tell server success\n")
-                            connect.Close()
-                            break Loop
-                        }
+            //等待ftp上传完毕
+            select {
+            case status := <-converSuccess:
+                if len(status) > 0 {
+                    MyPrintf("tell server[%s]\n", status)
+                    _, err := connect.Write([]byte(status))
+                    if err == nil {
+                        MyPrintf("tell server success\n")
+                        connect.Close()
                     }
                 }
             }
@@ -70,7 +67,7 @@ func downloadFileAndConvert(path string, args string) {
     cmd.Run()
     //path   dir/%d.mp4
     convert(strings.Split(path, "/")[1], args)
-    go uploadFile("c"+strings.Split(path, "/")[1], strings.Split(path, "/")[0])
+    uploadFile("c"+strings.Split(path, "/")[1], strings.Split(path, "/")[0])
     return
 }
 
@@ -100,47 +97,48 @@ func convert(path string, args string) {
     } else {
         MyPrintf("write log error[%v]", err.Error())
     }
-    fileName := strings.Split(path, ".")[0]
-    MyPrintf("chan \n")
-    converSuccess <- fileName
     MyPrintf("convert success\n")
     return
 }
 
 func uploadFile(name string, path string) {
-    MyPrintf("start upload\n")
-    ftp, err := goftp.Connect("188.166.213.154:21")
-    if err != nil {
-        panic(err)
-    }
-    if err = ftp.Login("video", "qpalzm"); err != nil {
-        panic(err)
-    }
-    file, err := os.Open(name)
-    if err != nil {
-        panic(err)
-    }
-    if err := ftp.Stor(path+"/"+name[1:], file); err != nil {
-        panic(err)
-    }
-    logfile, err := os.Open(name + ".log")
-    if err != nil {
-        panic(err)
-    }
-    if err := ftp.Stor(path+"/"+name+".log", logfile); err != nil {
-        panic(err)
-    }
     defer func() {
-        ftp.Close()
-        file.Close()
-        logfile.Close()
         //转换出来的文件
         os.Remove(name)
         os.Remove(name + ".log")
         //转换前的文件
         os.Remove(name[1:])
-        MyPrintf("upload over\n")
     }()
+    MyPrintf("start upload\n")
+    fileName := strings.Split(name[1:], ".")[0]
+    ftp, err := goftp.Connect("188.166.213.154:21")
+    if err != nil {
+        panic(err)
+    }
+    defer ftp.Close()
+    if err = ftp.Login("video", "qpalzm"); err != nil {
+        panic(err)
+    }
+    file, err := os.Open(name)
+    if err != nil {
+        converSuccess <- "fail;" + fileName
+        return
+    }
+    defer file.Close()
+    if err := ftp.Stor(path+"/"+name[1:], file); err != nil {
+        converSuccess <- "fail;" + fileName
+        return
+    }
+    converSuccess <- "success;" + fileName
+    logfile, err := os.Open(name + ".log")
+    if err != nil {
+        panic(err)
+    }
+    defer logfile.Close()
+    if err := ftp.Stor(path+"/"+name+".log", logfile); err != nil {
+        panic(err)
+    }
+    MyPrintf("upload over\n")
 }
 
 func MyPrintf(format string, a ...interface{}) (n int, err error) {
