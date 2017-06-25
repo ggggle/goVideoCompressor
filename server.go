@@ -11,13 +11,24 @@ import (
     "regexp"
     "strconv"
     "path/filepath"
-    "flag"
+    //"flag"
+    "gopkg.in/alecthomas/kingpin.v2"
 )
 
-/*TODO  输入参数增加切片大小选项
-        某个切片转码超时重新分配
-        针对某个区间转码
-*/
+var (
+    myApp      = kingpin.New("server", "Video-convert server.")
+    s          = myApp.Command("s", "Split video.")
+    sFile      = s.Arg("fileName", "video file name.").Required().String()
+    sPieceSize = s.Flag("size", "One piece size.").Default("70").Short('s').Uint()
+    c          = myApp.Command("c", "Convert video.")
+    cFile      = c.Arg("fileName", "video file name.").Required().String()
+    cArgs      = c.Flag("ff", "ffmpeg args.").Default("").Short('f').String()
+    cPieces    = c.Flag("piece", "只转换一部分片段，用分号;隔开").Short('p').String()
+    cPort      = c.Flag("port", "监听端口").Default("8054").String()
+    t          = myApp.Command("t", "Touch client")
+    tTime      = t.Arg("duration", "Duration time").Default("11").Uint()
+    tPort      = t.Flag("port", "监听端口").Default("8054").String()
+)
 
 var ConnectId int
 var AllConnects = make(map[int]net.Conn)
@@ -27,6 +38,114 @@ var remainMap = make(map[int]string)
 var initMap = make(map[int]int)
 
 func main() {
+    switch kingpin.MustParse(myApp.Parse(os.Args[1:])) {
+    case s.FullCommand():
+        fmt.Printf("s:[%s] [%d]\n", *sFile, *sPieceSize)
+        fileInfo, err := os.Stat(*sFile)
+        if err != nil {
+            fmt.Printf("[%s]not a file\n", *sFile)
+            return
+        }
+        fileSize := fileInfo.Size()
+        //单位转换成MB
+        fileSize /= 1024 * 1024
+        secondTime := GetSumTime(*sFile)
+        segmentTime := int(*sPieceSize) * secondTime / int(fileSize)
+        fmt.Printf("segment[%d]s\n", segmentTime)
+        segmentArgs := strconv.Itoa(segmentTime)
+        fmt.Printf("split video....wait\n")
+        b, path := SplitFile(*sFile, segmentArgs)
+        fmt.Printf("[%s] [%d]\n", path, b)
+
+    case c.FullCommand():
+        fmt.Printf("c:[%s] [%s] [%s]\n", *cFile, *cArgs, *cPieces)
+        pieceNum := fileCount(*cFile)
+        if len(*cPieces) > 0 {
+            pNum := strings.Split(*cPieces, ";")
+            for _, value := range pNum {
+                v, err := strconv.Atoi(value)
+                if err != nil || v >= pieceNum {
+                    fmt.Printf("输入参数错误[%s]\n", *cPieces)
+                    return
+                } else {
+                    //两个映射关系
+                    remainMap[v] = value
+                    initMap[len(initMap)] = v
+                }
+            }
+        }
+        //现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
+        if len(*cArgs) > 0 {
+            *cArgs = "-s 1280x720"
+        }
+        l, err := net.Listen("tcp", "0.0.0.0:" + *cPort)
+        defer l.Close()
+        if err != nil {
+            fmt.Printf("Failure to listen: %s\n", err.Error())
+            return
+        }
+        //去除路径中的最后一个斜杠
+        fp := *cFile
+        if (fp[len(fp)-1:]) == "/" {
+            fp = fp[:len(fp)-1]
+        }
+        //print(fp + "\n")
+        ftpDir := "/home/video/" + fp
+        os.Mkdir(ftpDir, 0755)
+        os.Chown(ftpDir, 2000, 2000)
+        //只转换部分片段时
+        if len(remainMap) > 0 {
+            pieceNum = len(remainMap)
+            fmt.Printf("pieceNum[%d]\n", pieceNum)
+        } else {
+            makeFileList(pieceNum, ftpDir)
+            makeConcatScript(ftpDir)
+        }
+        //go ReadStatus()
+        fmt.Printf("pieceNum[%d]\n", pieceNum)
+        go JobAlloc(fp, pieceNum, *cArgs)
+        for {
+            if c, err := l.Accept(); err == nil {
+                go NewConnect(c)
+            }
+        }
+
+    case t.FullCommand():
+        fmt.Printf("t:[%d]\n", *tTime)
+        l, err := net.Listen("tcp", "0.0.0.0:" + *tPort)
+        if err != nil {
+            fmt.Printf("Failure to listen: %s\n", err.Error())
+            return
+        }
+        defer l.Close()
+        timeOut := make(chan bool, 1)
+        go func(second uint) {
+            for ; second > 0; second-- {
+                time.Sleep(time.Second)
+                fmt.Printf("time[%d]\n", second)
+            }
+            timeOut <- true
+        }(*tTime)
+        go func() {
+            for {
+                if c, err := l.Accept(); err == nil {
+                    AllConnects[ConnectId] = c
+                    ConnectId++
+                }
+            }
+        }()
+        select {
+        case <-timeOut:
+            fmt.Printf("timeout\n")
+        }
+        fmt.Printf("####Online Client[%d]####\n", ConnectId)
+        for key := 0; key < len(AllConnects); key++ {
+            fmt.Printf("[%d]Client IP:port[%s]\n", key, AllConnects[key].RemoteAddr().String())
+            AllConnects[key].Close()
+        }
+    }
+    return
+    /*
     mod := flag.String("mod", "", "s-split|c-convert|t-touch")
     filePath := flag.String("i", "", "文件路径")
     Args := flag.String("args", "", "ffmpeg args|piece_size|count_time")
@@ -35,7 +154,7 @@ func main() {
     flag.Parse()
     switch *mod {
     case "s":
-        pieceSize := 100
+        pieceSize := 70
         if len(*filePath) <= 0 {
             fmt.Printf("no input file\n")
             return
@@ -56,7 +175,7 @@ func main() {
             fmt.Printf("split input args[%s] error, ignore\n", *Args)
         }
         segmentTime := pieceSize * secondTime / int(fileSize)
-        fmt.Printf("segment[%d]\n", segmentTime)
+        fmt.Printf("segment[%d]s\n", segmentTime)
         segmentArgs := strconv.Itoa(segmentTime)
         fmt.Printf("split video....wait\n")
         b, path := SplitFile(*filePath, segmentArgs)
@@ -67,7 +186,6 @@ func main() {
             fmt.Printf("no input file\n")
             return
         }
-
         pieceNum := fileCount(*filePath)
         if len(*piece) > 0 {
             pNum := strings.Split(*piece, ";")
@@ -165,6 +283,7 @@ func main() {
         fmt.Printf("mod error[%s]\n", *mod)
         return
     }
+    */
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
@@ -205,20 +324,8 @@ func SplitFile(filePath string, segment_time string) (piece int, dir string) {
     dir = strings.Replace(filePath, "\\", ".", -1)
     dir = "12" + dir
     os.Mkdir(dir, 0755)
-    /*timeSum := GetSumTime(filePath)
-    //w := bytes.NewBuffer(nil)
-    //TickTime 每块视频的大小
-    for start:=0; start<timeSum; piece, start = piece+1, start+TickTime {
-        fmt.Printf("start[%d] piece[%d]\n", start, piece)
-        pieceName := strconv.Itoa(piece) + ".mp4"
-        cmd := exec.Command("ffmpeg", "-i", filePath, "-ss", FormatTime(start),
-            "-t", FormatTime(TickTime), "-codec", "copy", dir+"/"+pieceName)
-        //cmd.Stderr = w
-        cmd.Run()
-        //fmt.Printf("%s\n", string(w.Bytes()))
-    }*/
     cmd := exec.Command("ffmpeg", "-i", filePath, "-acodec", "copy", "-f", "segment", "-segment_time",
-        segment_time, "-vcodec", "copy", "-reset_timestamps", "1", "-map", "0", dir+"/"+"%d.mp4")
+        segment_time, "-vcodec", "copy", "-reset_timestamps", "1", "-map", "0:0", "-map", "0:1", dir+"/"+"%d.mp4")
     cmd.Run()
     piece = fileCount(dir)
     return
@@ -281,7 +388,7 @@ func GetSumTime(filePath string) (SumTime int) {
         //fmt.Printf("%s\n", value)
     }
     SumTime ++
-    fmt.Printf("%d\n", SumTime)
+    fmt.Printf("视频长度[%d]s\n", SumTime)
     return
 }
 
@@ -301,12 +408,19 @@ func NewConnect(c net.Conn) {
                     return
                 case Data[0:7] == "success":
                     pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
-                    fmt.Printf("##[%d]piece convert success\n", pieceNum)
+                    fmt.Printf("###[%s] [%d]piece convert success\n", time.Now().Format("2006-01-02 15:04:05"), pieceNum)
                     c.Close()
                     delete(remainMap, pieceNum)
-                    fmt.Printf("[%d]remain job %v\n", len(remainMap), remainMap)
+                    if remainJob := len(remainMap); remainJob == 0 {
+                        fmt.Printf("------Convert All Done-----\n")
+                    } else {
+                        str := make([]string, 0)
+                        for _, value := range remainMap {
+                            str = append(str, value)
+                        }
+                        fmt.Printf("[%d]remain job[%v]\n", remainJob, strings.Join(str, ";"))
+                    }
                     return
-                    //ConvertSuccess <- arr
                 default:
                     continue
                 }
@@ -353,7 +467,6 @@ func makeFileList(fileCount int, dirPath string) {
         }
         file.Close()
     }
-
 }
 
 func makeConcatScript(dirPath string) {
