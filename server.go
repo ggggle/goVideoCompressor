@@ -14,20 +14,25 @@ import (
     //"flag"
     "gopkg.in/alecthomas/kingpin.v2"
 )
-
+//默认端口
+var DEFAULT_PORT string = "8055"
+//默认片段大小，单位MB
+var DEFAULT_SEGMENT_SIZE = "30"
+//touch默认等待时长，单位s
+var DEFAULT_TOUCH_TIME = "11"
 var (
     myApp      = kingpin.New("server", "Video-convert server.")
     s          = myApp.Command("s", "Split video.")
     sFile      = s.Arg("fileName", "video file name.").Required().String()
-    sPieceSize = s.Flag("size", "One piece size.").Default("70").Short('s').Uint()
+    sPieceSize = s.Flag("size", "One piece size.").Default(DEFAULT_SEGMENT_SIZE).Short('s').Uint()
     c          = myApp.Command("c", "Convert video.")
     cFile      = c.Arg("fileName", "video file name.").Required().String()
     cArgs      = c.Flag("ff", "ffmpeg args.").Default("").Short('f').String()
     cPieces    = c.Flag("piece", "只转换一部分片段，用分号;隔开").Short('p').String()
-    cPort      = c.Flag("port", "监听端口").Default("8054").String()
+    cPort      = c.Flag("port", "监听端口").Default(DEFAULT_PORT).String()
     t          = myApp.Command("t", "Touch client")
-    tTime      = t.Arg("duration", "Duration time").Default("11").Uint()
-    tPort      = t.Flag("port", "监听端口").Default("8054").String()
+    tTime      = t.Arg("duration", "Duration time").Default(DEFAULT_TOUCH_TIME).Uint()
+    tPort      = t.Flag("port", "监听端口").Default(DEFAULT_PORT).Short('p').String()
 )
 
 var ConnectId int
@@ -143,6 +148,7 @@ func main() {
             fmt.Printf("[%d]Client IP:port[%s]\n", key, AllConnects[key].RemoteAddr().String())
             AllConnects[key].Close()
         }
+        fmt.Printf("time[%s]\n", time.Now().Format("2006-01-02 15:04:05"))
     }
     return
     /*
