@@ -74,10 +74,10 @@ func main() {
                 }
             }
         }
-        //现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
+        /*现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
         if len(*cArgs) > 0 {
             *cArgs = "-s 1280x720"
-        }
+        }*/
         l, err := net.Listen("tcp", "0.0.0.0:" + *cPort)
         defer l.Close()
         if err != nil {
@@ -402,8 +402,11 @@ func NewConnect(c net.Conn) {
                 Data := string(data[:n])
                 switch {
                 case Data[0:4] == "fail":
-                    pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
-                    fmt.Printf("@@[%d]piece convert fail\n", pieceNum)
+                    retSplit := strings.Split(Data, ";")
+                    fmt.Printf("@@[%s]piece convert fail\n", retSplit[1])
+                    if len(retSplit) >= 3{
+                        fmt.Printf("@@reason[%s]\n", retSplit[2])
+                    }
                     c.Close()
                     return
                 case Data[0:7] == "success":
