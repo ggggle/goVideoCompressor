@@ -64,6 +64,11 @@ func main() {
 
     case c.FullCommand():
         fmt.Printf("c:[%s] [%s] [%s]\n", *cFile, *cArgs, *cPieces)
+        if "265" == *cArgs{
+            *cArgs = "-threads 4 -vcodec libx265 -crf 26"
+        } else if "264" == *cArgs{
+            *cArgs = "-threads 4 -vcodec libx264"
+        }
         pieceNum := fileCount(*cFile)
         if len(*cPieces) > 0 {
             pNum := strings.Split(*cPieces, ";")
@@ -151,145 +156,6 @@ func main() {
         fmt.Printf("time[%s]\n", time.Now().Format("2006-01-02 15:04:05"))
     }
     return
-    /*
-    mod := flag.String("mod", "", "s-split|c-convert|t-touch")
-    filePath := flag.String("i", "", "文件路径")
-    Args := flag.String("args", "", "ffmpeg args|piece_size|count_time")
-    piece := flag.String("p", "", "只转换一部分片段，用分号;隔开")
-    port := flag.String("port", "8054", "监听端口")
-    flag.Parse()
-    switch *mod {
-    case "s":
-        pieceSize := 70
-        if len(*filePath) <= 0 {
-            fmt.Printf("no input file\n")
-            return
-        }
-        fileInfo, err := os.Stat(*filePath)
-        if err != nil {
-            fmt.Printf("[%s]not a file\n", *filePath)
-            return
-        }
-        fileSize := fileInfo.Size()
-        //单位转换成MB
-        fileSize /= 1024 * 1024
-        secondTime := GetSumTime(*filePath)
-        tmp, err := strconv.Atoi(*Args)
-        if err == nil {
-            pieceSize = tmp
-        } else {
-            fmt.Printf("split input args[%s] error, ignore\n", *Args)
-        }
-        segmentTime := pieceSize * secondTime / int(fileSize)
-        fmt.Printf("segment[%d]s\n", segmentTime)
-        segmentArgs := strconv.Itoa(segmentTime)
-        fmt.Printf("split video....wait\n")
-        b, path := SplitFile(*filePath, segmentArgs)
-        fmt.Printf("[%s] [%d]\n", path, b)
-        return
-    case "c":
-        if len(*filePath) <= 0 {
-            fmt.Printf("no input file\n")
-            return
-        }
-        pieceNum := fileCount(*filePath)
-        if len(*piece) > 0 {
-            pNum := strings.Split(*piece, ";")
-            for _, value := range pNum {
-                v, err := strconv.Atoi(value)
-                if err != nil || v >= pieceNum {
-                    fmt.Printf("输入参数错误[%s]\n", *piece)
-                    return
-                } else {
-                    //两个映射关系
-                    remainMap[v] = value
-                    initMap[len(initMap)] = v
-                }
-            }
-        }
-        //现阶段暂时只会填这个参数，忘填-s导致客户端崩溃好几次了 - -
-        if len(*Args) > 0 {
-            *Args = "-s 1280x720"
-        }
-        l, err := net.Listen("tcp", "0.0.0.0:" + *port)
-        defer l.Close()
-        if err != nil {
-            fmt.Printf("Failure to listen: %s\n", err.Error())
-            return
-        }
-        //去除路径中的最后一个斜杠
-        fp := *filePath
-        if (fp[len(fp)-1:]) == "/" {
-            fp = fp[:len(fp)-1]
-        }
-        //print(fp + "\n")
-        ftpDir := "/home/video/" + fp
-        os.Mkdir(ftpDir, 0755)
-        os.Chown(ftpDir, 2000, 2000)
-        //只转换部分片段时
-        if len(remainMap) > 0 {
-            pieceNum = len(remainMap)
-            fmt.Printf("pieceNum[%d]\n", pieceNum)
-        } else {
-            makeFileList(pieceNum, ftpDir)
-            makeConcatScript(ftpDir)
-        }
-        //go ReadStatus()
-        fmt.Printf("pieceNum[%d]\n", pieceNum)
-        go JobAlloc(fp, pieceNum, *Args)
-        for {
-            if c, err := l.Accept(); err == nil {
-                go NewConnect(c)
-            }
-        }
-    case "t":
-        l, err := net.Listen("tcp", "0.0.0.0:" + *port)
-        if err != nil {
-            fmt.Printf("Failure to listen: %s\n", err.Error())
-            return
-        }
-        defer l.Close()
-        var waitTime int
-        if len(*Args) > 0 {
-            waitTime, err = strconv.Atoi(*Args)
-            if err != nil {
-                fmt.Printf("args error[%s]", *Args)
-                return
-            }
-        } else {
-            waitTime = 11
-        }
-        timeOut := make(chan bool, 1)
-        go func(second int) {
-            for ; second > 0; second-- {
-                time.Sleep(time.Second)
-                fmt.Printf("time[%d]\n", second)
-            }
-            timeOut <- true
-        }(waitTime)
-        go func() {
-            for {
-                if c, err := l.Accept(); err == nil {
-                    AllConnects[ConnectId] = c
-                    ConnectId++
-                }
-            }
-        }()
-        select {
-        case <-timeOut:
-            fmt.Printf("timeout\n")
-        }
-        fmt.Printf("####Online Client[%d]####\n", ConnectId)
-        for key := 0; key < len(AllConnects); key++ {
-            fmt.Printf("[%d]Client IP:port[%s]\n", key, AllConnects[key].RemoteAddr().String())
-            AllConnects[key].Close()
-        }
-        return
-    default:
-        fmt.Printf("mod error[%s]\n", *mod)
-        return
-    }
-    */
 }
 
 func JobAlloc(path string, num int, convertArgs string) {
