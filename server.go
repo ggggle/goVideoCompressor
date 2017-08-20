@@ -17,7 +17,7 @@ import (
 //默认端口
 var DEFAULT_PORT string = "8055"
 //默认片段大小，单位MB
-var DEFAULT_SEGMENT_SIZE = "30"
+var DEFAULT_SEGMENT_SIZE = "10"
 //touch默认等待时长，单位s
 var DEFAULT_TOUCH_TIME = "11"
 var (
@@ -100,9 +100,9 @@ func main() {
             fp = fp[:len(fp)-1]
         }
         //print(fp + "\n")
-        ftpDir := "/home/video/" + fp
+        ftpDir := "/home/vuser/" + fp
         os.Mkdir(ftpDir, 0755)
-        os.Chown(ftpDir, 2000, 2000)
+        os.Chown(ftpDir, 9001, 9001)
         //只转换部分片段时
         if len(remainMap) > 0 {
             pieceNum = len(remainMap)

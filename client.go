@@ -11,13 +11,17 @@ import (
     "bytes"
 )
 
+var SERVER_IP = "138.128.213.33"
 var printLog bool = false
 var converSuccess chan string = make(chan string, 10)
-var nginxServer string = "http://188.166.213.154/"
+var nginxServer string = "http://" + SERVER_IP + "/"
 
 func main() {
+    if temp := os.Getenv("SERVER_IP"); len(temp) > 0 {
+        SERVER_IP = temp
+    }
     for {
-        connect, err := net.DialTimeout("tcp", "188.166.213.154:8055", time.Second*10)
+        connect, err := net.DialTimeout("tcp", SERVER_IP+":8055", time.Second*10)
         ipStr := ""
         if err == nil {
             MyPrintf("connect success\n")
@@ -120,13 +124,13 @@ func uploadFile(name string, path string) {
     }()
     MyPrintf("start upload\n")
     fileName := strings.Split(name[1:], ".")[0]
-    ftp, err := goftp.Connect("188.166.213.154:21")
+    ftp, err := goftp.Connect(SERVER_IP + ":21")
     if err != nil {
         converSuccess <- "fail;" + fileName + ";连接ftp服务器失败"
         return
     }
     defer ftp.Close()
-    if err = ftp.Login("video", "qpalzm"); err != nil {
+    if err = ftp.Login("vuser", "qpalzmvuser"); err != nil {
         converSuccess <- "fail;" + fileName + ";登录ftp服务器失败"
         return
     }
