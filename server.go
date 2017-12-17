@@ -74,7 +74,7 @@ func main() {
             pNum := strings.Split(*cPieces, ";")
             for _, value := range pNum {
                 v, err := strconv.Atoi(value)
-                if err != nil || v >= pieceNum {
+                if err != nil {
                     fmt.Printf("输入参数错误[%s]\n", *cPieces)
                     return
                 } else {
@@ -116,7 +116,7 @@ func main() {
         go JobAlloc(fp, pieceNum, *cArgs)
         for {
             if c, err := l.Accept(); err == nil {
-                go NewConnect(c)
+                go NewConnect(c, fp)
             }
         }
 
@@ -264,7 +264,7 @@ func GetSumTime(filePath string) (SumTime int) {
     return
 }
 
-func NewConnect(c net.Conn) {
+func NewConnect(c net.Conn, dirPath string) {
     fmt.Printf("new connect\n")
     go func() {
         for {
@@ -285,6 +285,7 @@ func NewConnect(c net.Conn) {
                     pieceNum, _ := strconv.Atoi(strings.Split(Data, ";")[1])
                     fmt.Printf("###[%s] [%d]piece convert success\n", time.Now().Format("2006-01-02 15:04:05"), pieceNum)
                     c.Close()
+                    os.Remove(dirPath + "/" + strings.Split(Data, ";")[1] + ".mp4")
                     delete(remainMap, pieceNum)
                     if remainJob := len(remainMap); remainJob == 0 {
                         fmt.Printf("------Convert All Done-----\n")
