@@ -14,7 +14,7 @@ import (
 var SERVER_IP = "138.128.213.33"
 var printLog bool = false
 var converSuccess chan string = make(chan string, 10)
-var nginxServer string = "http://" + SERVER_IP + "/"
+
 
 func main() {
     if temp := os.Getenv("SERVER_IP"); len(temp) > 0 {
@@ -75,6 +75,7 @@ func downloadFileAndConvert(path string, args string) {
         converSuccess <- "fail;" + strings.Split(fileName, ".")[0] + ";转换参数为空"
         return
     }
+    nginxServer := "http://" + SERVER_IP + "/"
     cmd := exec.Command("wget", nginxServer+path)
     cmd.Run()
     //path   dir/%d.mp4
