@@ -289,6 +289,7 @@ func NewConnect(c net.Conn, dirPath string) {
                     delete(remainMap, pieceNum)
                     if remainJob := len(remainMap); remainJob == 0 {
                         fmt.Printf("------Convert All Done-----\n")
+                        os.Exit(0)
                     } else {
                         str := make([]string, 0)
                         for _, value := range remainMap {

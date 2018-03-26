@@ -58,7 +58,7 @@ func (api *DigitalOceanApi) CreateDocker(num int) (droplet []godo.Droplet) {
     createRequest := &godo.DropletMultiCreateRequest{
         Names:  names,
         Region: "sfo2",
-        Size:   "512mb",
+        Size:   "s-3vcpu-1gb",
         Image: godo.DropletCreateImage{
             Slug: dockerSlugName,
         },
