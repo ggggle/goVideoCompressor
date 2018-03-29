@@ -11,14 +11,28 @@ import (
     "bytes"
 )
 
-var SERVER_IP = "138.128.213.33"
-var printLog bool = false
-var converSuccess chan string = make(chan string, 10)
-
+var SERVER_IP string
+var SERVER_PORT = "8055"
+var printLog = false
+var converSuccess = make(chan string, 10)
+var FTP_USERNAME string
+var FTP_PASSWORD string
 
 func main() {
-    if temp := os.Getenv("SERVER_IP"); len(temp) > 0 {
-        SERVER_IP = temp
+    if SERVER_IP = os.Getenv("SERVER_IP"); 0 == len(SERVER_IP) {
+        fmt.Print("SERVER_IP NIL")
+        return
+    }
+    if FTP_USERNAME = os.Getenv("FTP_USERNAME"); 0 == len(FTP_USERNAME) {
+        fmt.Print("FTP_USERNAME NIL")
+        return
+    }
+    if FTP_PASSWORD = os.Getenv("FTP_PASSWORD"); 0 == len(FTP_PASSWORD) {
+        fmt.Print("FTP_PASSWORD NIL")
+        return
+    }
+    if temp := os.Getenv("SERVER_PORT"); len(temp) > 0 {
+        SERVER_PORT = temp
     }
     for {
         connect, err := net.DialTimeout("tcp", SERVER_IP+":8055", time.Second*10)
@@ -131,7 +145,7 @@ func uploadFile(name string, path string) {
         return
     }
     defer ftp.Close()
-    if err = ftp.Login("vuser", "qpalzmvuser"); err != nil {
+    if err = ftp.Login(FTP_USERNAME, FTP_PASSWORD); err != nil {
         converSuccess <- "fail;" + fileName + ";登录ftp服务器失败"
         return
     }
