@@ -35,7 +35,7 @@ func main() {
         SERVER_PORT = temp
     }
     for {
-        connect, err := net.DialTimeout("tcp", SERVER_IP+":8055", time.Second*10)
+        connect, err := net.DialTimeout("tcp", SERVER_IP+":"+SERVER_PORT, time.Second*10)
         ipStr := ""
         if err == nil {
             MyPrintf("connect success\n")
