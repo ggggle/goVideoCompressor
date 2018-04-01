@@ -38,7 +38,7 @@ type DigitalOceanApi struct {
 }
 
 func NewAPI(token string) *DigitalOceanApi {
-    var api *DigitalOceanApi = new(DigitalOceanApi)
+    api := new(DigitalOceanApi)
     tokenSource := &TokenSource{
         AccessToken: token,
     }
@@ -63,7 +63,7 @@ func (api *DigitalOceanApi) CreateDocker(num int) (droplet []godo.Droplet) {
             Slug: dockerSlugName,
         },
         SSHKeys: []godo.DropletCreateSSHKey{
-            godo.DropletCreateSSHKey{
+            {
                 Fingerprint: api.sshFingerprint,
             },
         },
